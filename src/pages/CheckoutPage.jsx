@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { CheckCircle2, HandCoins, CreditCard } from 'lucide-react';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -22,14 +22,30 @@ const CheckoutPage = () => {
   const { items, subtotal, clear } = useCart();
   const settings = useSettings();
 
-  const activeUser = pb.authStore.model;
+  const [activeUser, setActiveUser] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setActiveUser(user);
+        setForm((f) => ({
+          ...f,
+          name: user.user_metadata?.name || user.email?.split('@')[0] || '',
+          email: user.email || '',
+          phone: user.user_metadata?.phone || user.user_metadata?.mobile || '',
+          address: user.user_metadata?.address || '',
+          city: user.user_metadata?.city || ''
+        }));
+      }
+    });
+  }, []);
 
   const [form, setForm] = useState({
-    name: activeUser?.name || '',
-    email: activeUser?.email || '',
-    phone: activeUser?.phone || activeUser?.mobile || '',
-    address: activeUser?.address || '',
-    city: activeUser?.city || '',
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
     notes: ''
   });
 
@@ -71,11 +87,14 @@ const CheckoutPage = () => {
   const redirectToSubdomainCheckout = async () => {
     try {
       const currentTotal = total;
-      const userId = activeUser?.id || '';
+      const userId = activeUser?.id || null;
+
+      let recordId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
 
       const orderPayload = {
+        id: recordId,
         customer_name: form.name,
-        customer_id: userId || null,
+        customer_id: userId,
         customer_email: form.email,
         phone: form.phone,
         address: form.address,
@@ -91,13 +110,12 @@ const CheckoutPage = () => {
         status: 'new'
       };
 
-      let recordId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-
       try {
-        const record = await pb.collection('orders').create(orderPayload);
-        recordId = record.id;
+        const { data, error } = await supabase.from('orders').insert([orderPayload]).select().single();
+        if (error) console.warn('Supabase order sync notice:', error.message);
+        else if (data?.id) recordId = data.id;
       } catch (dbErr) {
-        console.warn('PocketBase order sync notice:', dbErr);
+        console.warn('Supabase order sync error:', dbErr);
       }
 
       const localOrders = JSON.parse(localStorage.getItem('fos_customer_orders') || '[]');
@@ -126,11 +144,14 @@ const CheckoutPage = () => {
   const saveOrderToDatabase = async (paymentDetails) => {
     try {
       const currentTotal = total;
-      const userId = activeUser?.id || '';
+      const userId = activeUser?.id || null;
+
+      let recordId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
 
       const orderPayload = {
+        id: recordId,
         customer_name: form.name,
-        customer_id: userId || null,
+        customer_id: userId,
         customer_email: form.email,
         phone: form.phone,
         address: form.address,
@@ -146,13 +167,12 @@ const CheckoutPage = () => {
         status: 'new'
       };
 
-      let recordId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-
       try {
-        const record = await pb.collection('orders').create(orderPayload);
-        recordId = record.id;
+        const { data, error } = await supabase.from('orders').insert([orderPayload]).select().single();
+        if (error) console.warn('Supabase sync fallback for COD:', error.message);
+        else if (data?.id) recordId = data.id;
       } catch (dbErr) {
-        console.warn('PocketBase sync fallback for COD:', dbErr);
+        console.warn('Supabase sync fallback error:', dbErr);
       }
 
       const localOrders = JSON.parse(localStorage.getItem('fos_customer_orders') || '[]');
