@@ -102,8 +102,15 @@ const HomePage = () => {
 
                 <div className="relative z-10 w-full px-6 sm:px-12 md:px-16 py-20 md:py-24 max-w-3xl">
                     <div className="flex flex-col justify-center">
+                        {/* Brand Logo Support */}
+                        {settings?.logo ? (
+                            <div className="mb-4">
+                                <img src={settings.logo} alt="Factory Outlet Shoes" className="h-10 object-contain brightness-0 invert" />
+                            </div>
+                        ) : null}
+
                         <motion.div
-                            className="flex items-center gap-2 mb-4 md:mb-6 mt-8 md:mt-0"
+                            className="flex items-center gap-2 mb-4 md:mb-6 mt-2 md:mt-0"
                             initial={{ opacity: 0, y: -16 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6, delay: 0.2 }}
