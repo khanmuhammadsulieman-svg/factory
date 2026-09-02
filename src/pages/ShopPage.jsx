@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import ProductCard from '@/components/ProductCard';
@@ -39,11 +39,24 @@ const ShopPage = () => {
     const [filtersOpen, setFiltersOpen] = useState(false);
 
     useEffect(() => {
-        pb.collection('products')
-            .getFullList({ filter: 'active = true', sort: '-created' })
-            .then(setProducts)
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        const fetchProducts = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('products')
+                    .select('*')
+                    .eq('active', true)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                setProducts(data || []);
+            } catch (err) {
+                console.error('Error fetching products:', err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchProducts();
     }, []);
 
     useEffect(() => {
