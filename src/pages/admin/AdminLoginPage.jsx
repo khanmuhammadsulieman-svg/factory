@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Footprints, Lock, KeyRound, ArrowLeft } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,31 +22,17 @@ const AdminLoginPage = () => {
         setLoading(true);
 
         try {
-            // Check local fallback environment variables first
-            if (!isForgotMode && email === import.meta.env.VITE_ADMIN_USER && password === import.meta.env.VITE_ADMIN_PASS) {
-                localStorage.setItem('isAdminAuthenticated', 'true');
-                navigate('/admin');
-                return;
-            }
-
             if (isForgotMode) {
-                const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-                    redirectTo: window.location.origin + '/admin/login',
-                });
-                if (resetError) throw resetError;
-                setMessage('Password recovery instructions sent to your email.');
+                // Password recovery is disabled in independent offline mode
+                setMessage('Password reset is disabled. Use your configured admin credentials.');
             } else {
-                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-
-                if (authError || !authData.user) {
-                    throw new Error('Invalid email or password.');
+                // Direct hardcoded credentials check to ensure 100% independence from Supabase/PocketBase
+                if (email.trim() === 'admin@factoryoutletshoes.store' && password === 'YourSecurePasswordHere') {
+                    localStorage.setItem('isAdminAuthenticated', 'true');
+                    navigate('/admin', { replace: true });
+                    return;
                 }
-
-                localStorage.setItem('isAdminAuthenticated', 'true');
-                navigate('/admin');
+                throw new Error('Invalid email or password.');
             }
         } catch (err) {
             setError(err.message || 'An error occurred during authentication.');
@@ -72,7 +57,7 @@ const AdminLoginPage = () => {
                     </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
                         {isForgotMode 
-                            ? 'Enter your email to receive a recovery link' 
+                            ? 'Recovery mode' 
                             : 'Sign in to manage factoryoutletshoes.store'}
                     </p>
                 </div>
@@ -118,7 +103,7 @@ const AdminLoginPage = () => {
 
                     <Button type="submit" disabled={loading} className="h-11 w-full rounded-xl font-semibold">
                         {!isForgotMode && <Lock className="mr-2 h-4 w-4" />}
-                        {loading ? 'Please wait…' : (isForgotMode ? 'Send Reset Link' : 'Sign In')}
+                        {loading ? 'Please wait…' : (isForgotMode ? 'Back to Sign In' : 'Sign In')}
                     </Button>
                 </form>
 
