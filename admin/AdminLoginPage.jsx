@@ -2,14 +2,12 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Footprints, Lock } from 'lucide-react';
-import pb from '@/lib/pocketbaseClient';
-import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const AdminLoginPage = () => {
-    const { login, logout } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -20,16 +18,35 @@ const AdminLoginPage = () => {
         e.preventDefault();
         setError('');
         setLoading(true);
+
         try {
-            await login(email, password);
-            if (pb.authStore.record?.role !== 'admin') {
-                logout();
+            // 1. Authenticate with Supabase Auth
+            const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (authError || !authData.user) {
+                throw new Error('Invalid email or password.');
+            }
+
+            // 2. Verify if the logged-in user exists in your custom 'admins' table
+            const { data: adminData, error: adminError } = await supabase
+                .from('admins')
+                .select('*')
+                .eq('id', authData.user.id)
+                .single();
+
+            if (adminError || !adminData) {
+                await supabase.auth.signOut();
                 setError('This account does not have admin access.');
                 return;
             }
+
+            // 3. Success - redirect to admin dashboard
             navigate('/admin');
-        } catch {
-            setError('Invalid email or password.');
+        } catch (err) {
+            setError(err.message || 'Invalid email or password.');
         } finally {
             setLoading(false);
         }
