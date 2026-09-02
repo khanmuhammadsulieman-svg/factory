@@ -1,125 +1,86 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { AlertTriangle, Banknote, Clock, ShoppingCart } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { pkr } from '@/lib/money';
 
-const STATUS_COLORS = {
-    new: 'bg-blue-500/15 text-blue-400',
-    confirmed: 'bg-accent/15 text-accent',
-    packed: 'bg-purple-500/15 text-purple-400',
-    shipped: 'bg-cyan-500/15 text-cyan-400',
-    delivered: 'bg-green-500/15 text-green-400',
-    cancelled: 'bg-destructive/15 text-destructive',
-};
+const AdminLogin = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [errorMsg, setErrorMsg] = useState('');
+    const navigate = useNavigate();
 
-const AdminDashboard = () => {
-    const [orders, setOrders] = useState([]);
-    const [products, setProducts] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setErrorMsg('');
 
-    useEffect(() => {
-        const fetchDashboardData = async () => {
-            try {
-                const [ordersRes, productsRes] = await Promise.all([
-                    supabase.from('orders').select('*').order('created_at', { ascending: false }),
-                    supabase.from('products').select('*'),
-                ]);
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
 
-                if (ordersRes.error) throw ordersRes.error;
-                if (productsRes.error) throw productsRes.error;
+            if (error) throw error;
 
-                setOrders(ordersRes.data || []);
-                setProducts(productsRes.data || []);
-            } catch (err) {
-                console.error('Error fetching dashboard data:', err.message);
-            } finally {
-                setLoading(false);
+            if (data?.session) {
+                // Force state persistence and redirect to admin dashboard
+                navigate('/admin', { replace: true });
             }
-        };
-
-        fetchDashboardData();
-    }, []);
-
-    const pending = orders.filter((o) => o.status === 'new').length;
-    const revenue = orders
-        .filter((o) => o.status !== 'cancelled')
-        .reduce((s, o) => s + (o.total || 0), 0);
-    const lowStock = products.filter((p) => (p.stock || 0) <= 5);
-
-    const cards = [
-        { label: 'Total Orders', value: orders.length, icon: ShoppingCart },
-        { label: 'Pending Orders', value: pending, icon: Clock },
-        { label: 'Revenue', value: pkr(revenue), icon: Banknote },
-        { label: 'Low Stock Products', value: lowStock.length, icon: AlertTriangle },
-    ];
+        } catch (err) {
+            setErrorMsg(err.message || 'Invalid login credentials');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
-        <div>
+        <div className="flex min-h-screen items-center justify-center bg-background px-4">
             <Helmet>
-                <title>Admin Dashboard | Factory Outlet Shoes</title>
-                <meta name="description" content="Store overview: orders, revenue and stock alerts." />
+                <title>Admin Login | Factory Outlet Shoes</title>
             </Helmet>
-            <h1 className="font-display text-2xl font-bold">Dashboard</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Store overview — catalog currently holds demo inventory.</p>
+            <div className="w-full max-w-md rounded-2xl border border-border bg-secondary/30 p-8 shadow-lg">
+                <h2 className="font-display text-2xl font-bold">Store Admin</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Sign in to manage factoryoutletshoes.store</p>
 
-            <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
-                {cards.map((c) => (
-                    <div key={c.label} className="rounded-2xl border border-border bg-secondary/30 p-5">
-                        <c.icon className="h-5 w-5 text-primary" />
-                        <p className="font-display mt-3 text-2xl font-bold">{loading ? '…' : c.value}</p>
-                        <p className="text-xs text-muted-foreground">{c.label}</p>
+                {errorMsg && (
+                    <div className="mt-4 rounded-lg bg-destructive/15 p-3 text-sm text-destructive">
+                        {errorMsg}
                     </div>
-                ))}
-            </div>
+                )}
 
-            <div className="mt-8 grid gap-6 xl:grid-cols-2">
-                <section className="rounded-2xl border border-border bg-secondary/30 p-5">
-                    <div className="flex items-center justify-between">
-                        <h2 className="font-display font-semibold">Recent Orders</h2>
-                        <Link to="/admin/orders" className="text-xs font-medium text-primary">View all</Link>
+                <form onSubmit={handleLogin} className="mt-6 space-y-4">
+                    <div>
+                        <label className="text-xs font-medium text-muted-foreground">Email</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                        />
                     </div>
-                    <div className="mt-4 space-y-3">
-                        {orders.slice(0, 6).map((o) => (
-                            <div key={o.id} className="flex items-center justify-between gap-3 text-sm">
-                                <div className="min-w-0">
-                                    <p className="truncate font-medium">{o.customer_name}</p>
-                                    <p className="text-xs text-muted-foreground">{o.city} • {pkr(o.total)}</p>
-                                </div>
-                                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_COLORS[o.status] || ''}`}>
-                                    {o.status}
-                                </span>
-                            </div>
-                        ))}
-                        {!loading && orders.length === 0 && (
-                            <p className="text-sm text-muted-foreground">No orders yet — they will appear here.</p>
-                        )}
+                    <div>
+                        <label className="text-xs font-medium text-muted-foreground">Password</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                        />
                     </div>
-                </section>
-
-                <section className="rounded-2xl border border-border bg-secondary/30 p-5">
-                    <div className="flex items-center justify-between">
-                        <h2 className="font-display font-semibold">Low Stock Alerts</h2>
-                        <Link to="/admin/products" className="text-xs font-medium text-primary">Manage</Link>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                        {lowStock.slice(0, 6).map((p) => (
-                            <div key={p.id} className="flex items-center justify-between text-sm">
-                                <span className="truncate font-medium">{p.name}</span>
-                                <span className={`text-xs font-semibold ${p.stock <= 0 ? 'text-destructive' : 'text-accent'}`}>
-                                    {p.stock <= 0 ? 'Out of stock' : `${p.stock} left`}
-                                </span>
-                            </div>
-                        ))}
-                        {!loading && lowStock.length === 0 && (
-                            <p className="text-sm text-muted-foreground">All products are well stocked.</p>
-                        )}
-                    </div>
-                </section>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                        {loading ? 'Signing in...' : 'Sign In'}
+                    </button>
+                </form>
             </div>
         </div>
     );
 };
 
-export default AdminDashboard;
+export default AdminLogin;
