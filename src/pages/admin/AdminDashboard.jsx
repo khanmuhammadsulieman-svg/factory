@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { AlertTriangle, Banknote, Clock, ShoppingCart } from 'lucide-react';
-import pb from '@/lib/pocketbaseClient';
 import { pkr } from '@/lib/money';
 
 const STATUS_COLORS = {
@@ -20,16 +19,17 @@ const AdminDashboard = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        Promise.all([
-            pb.collection('orders').getFullList({ sort: '-created' }),
-            pb.collection('products').getFullList(),
-        ])
-            .then(([o, p]) => {
-                setOrders(o);
-                setProducts(p);
-            })
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        // Load data completely offline from localStorage
+        try {
+            const savedOrders = JSON.parse(localStorage.getItem('admin_orders') || '[]');
+            const savedProducts = JSON.parse(localStorage.getItem('admin_products') || '[]');
+            setOrders(savedOrders);
+            setProducts(savedProducts);
+        } catch (e) {
+            console.error("Failed to load local admin data", e);
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
     const pending = orders.filter((o) => o.status === 'new').length;
@@ -52,7 +52,7 @@ const AdminDashboard = () => {
                 <meta name="description" content="Store overview: orders, revenue and stock alerts." />
             </Helmet>
             <h1 className="font-display text-2xl font-bold">Dashboard</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Store overview — catalog currently holds demo inventory.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Store overview — running on independent local storage mode.</p>
 
             <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
                 {cards.map((c) => (
@@ -72,7 +72,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="mt-4 space-y-3">
                         {orders.slice(0, 6).map((o) => (
-                            <div key={o.id} className="flex items-center justify-between gap-3 text-sm">
+                            <div key={o.id || o.created} className="flex items-center justify-between gap-3 text-sm">
                                 <div className="min-w-0">
                                     <p className="truncate font-medium">{o.customer_name}</p>
                                     <p className="text-xs text-muted-foreground">{o.city} • {pkr(o.total)}</p>
@@ -95,7 +95,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="mt-4 space-y-3">
                         {lowStock.slice(0, 6).map((p) => (
-                            <div key={p.id} className="flex items-center justify-between text-sm">
+                            <div key={p.id || p.name} className="flex items-center justify-between text-sm">
                                 <span className="truncate font-medium">{p.name}</span>
                                 <span className={`text-xs font-semibold ${p.stock <= 0 ? 'text-destructive' : 'text-accent'}`}>
                                     {p.stock <= 0 ? 'Out of stock' : `${p.stock} left`}
