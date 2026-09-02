@@ -8,7 +8,7 @@ import Footer from '@/components/Footer';
 import ProductCard from '@/components/ProductCard';
 import Reveal from '@/components/Reveal';
 import useSettings from '@/hooks/useSettings';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 
 const CATEGORIES = [
@@ -35,11 +35,15 @@ const HomePage = () => {
     const [bestSellers, setBestSellers] = useState([]);
 
     useEffect(() => {
-        pb.collection('products')
-            .getList(1, 8, { sort: '-created', filter: 'active = true' })
-            .then((r) => {
-                if (r.items.length > 0) {
-                    setBestSellers(r.items);
+        supabase
+            .from('products')
+            .select('*')
+            .eq('active', true)
+            .order('created_at', { ascending: false })
+            .limit(8)
+            .then(({ data, error }) => {
+                if (!error && data && data.length > 0) {
+                    setBestSellers(data);
                 } else {
                     setBestSellers([
                         { id: '1', title: 'Classic Leather Casual Shoe', price: 1299, image: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&q=80&w=600' },
@@ -75,25 +79,21 @@ const HomePage = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
             >
-                {/* Background Image */}
                 <div
                     className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-overlay pointer-events-none"
                     style={{ backgroundImage: `url('https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&q=80&w=1200')` }}
                 />
 
-                {/* Top Right Animated Price Badge */}
                 <motion.div
                     className="absolute top-3 right-3 md:top-6 md:right-8 z-20 flex items-center justify-center w-24 h-24 md:w-32 md:h-32"
                     animate={{ scale: [1, 1.1, 1], opacity: [0.85, 1, 0.85] }}
                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                 >
-                    {/* Circling Outer Ring */}
                     <motion.div
                         className="absolute inset-0 rounded-full border-2 md:border-[3px] border-dashed border-yellow-400"
                         animate={{ rotate: 360 }}
                         transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
                     />
-                    {/* Inner Badge */}
                     <div className="bg-gradient-to-br from-yellow-400 to-amber-500 text-black rounded-full w-[85%] h-[85%] flex flex-col items-center justify-center shadow-2xl z-10 border border-yellow-300">
                         <span className="text-[10px] md:text-sm font-bold uppercase tracking-widest opacity-90 drop-shadow-sm">From</span>
                         <span className="text-sm md:text-xl font-black mt-[-2px] drop-shadow-sm">PKR 999</span>
@@ -102,7 +102,6 @@ const HomePage = () => {
 
                 <div className="relative z-10 w-full px-6 sm:px-12 md:px-16 py-20 md:py-24 max-w-3xl">
                     <div className="flex flex-col justify-center">
-                        {/* Brand Logo Support */}
                         {settings?.logo ? (
                             <div className="mb-4">
                                 <img src={settings.logo} alt="Factory Outlet Shoes" className="h-10 object-contain brightness-0 invert" />
@@ -178,8 +177,6 @@ const HomePage = () => {
                                 >
                                     <Link to={cat.link} className="group relative overflow-hidden rounded-xl md:rounded-2xl border border-border aspect-[4/5] bg-secondary shadow-sm hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-1 md:hover:-translate-y-2 block">
                                         <img src={cat.image} alt={cat.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" />
-
-                                        {/* CLEAN TEXT PLACED AT THE TOP WITHOUT WHITE BACKGROUND */}
                                         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-transparent transition-colors duration-500 flex items-start justify-center p-3 pt-3 md:pt-4">
                                             <span className="text-white font-bold text-xs md:text-sm uppercase tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-center w-[90%] truncate">
                                                 {cat.name}
