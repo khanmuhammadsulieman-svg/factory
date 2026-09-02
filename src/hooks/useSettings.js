@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function useSettings() {
     const [settings, setSettings] = useState({
@@ -17,14 +17,23 @@ export default function useSettings() {
     });
 
     useEffect(() => {
-        pb.collection('settings')
-            .getList(1, 1)
-            .then((r) => {
-                if (r.items[0]) {
-                    setSettings((prev) => ({ ...prev, ...r.items[0] }));
+        const fetchSettings = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('settings')
+                    .select('*')
+                    .limit(1)
+                    .maybeSingle();
+
+                if (data && !error) {
+                    setSettings((prev) => ({ ...prev, ...data }));
                 }
-            })
-            .catch(() => {});
+            } catch (err) {
+                // Fallback to default state if table doesn't exist yet
+            }
+        };
+
+        fetchSettings();
     }, []);
 
     return settings;
