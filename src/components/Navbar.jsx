@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Menu, ShoppingBag, User, LogOut, Eye, EyeOff, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useCart } from '@/contexts/CartContext';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,12 +39,28 @@ const Navbar = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const isLoggedIn = pb.authStore.isValid;
-    const currentUser = pb.authStore.model;
-    const displayName = currentUser?.name || currentUser?.email?.split('@')[0] || 'User';
+    // Supabase Session State
+    const [user, setUser] = useState(null);
 
-    const handleLogout = () => {
-        pb.authStore.clear();
+    useEffect(() => {
+        // Get initial session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+        });
+
+        // Listen for auth state changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    const isLoggedIn = !!user;
+    const displayName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
         window.location.reload();
     };
 
@@ -54,11 +70,17 @@ const Navbar = () => {
         setLoading(true);
 
         try {
-            await pb.collection('users').authWithPassword(email, password);
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (authError) throw authError;
+
             setAuthModal(null);
             window.location.reload();
         } catch (err) {
-            setError('Invalid email or password. Please try again.');
+            setError(err.message || 'Invalid email or password. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -81,29 +103,22 @@ const Navbar = () => {
         setLoading(true);
 
         try {
-            const data = {
-                username: 'u_' + Math.random().toString(36).substring(2, 10),
+            const { error: signUpError } = await supabase.auth.signUp({
                 email,
-                emailVisibility: true,
                 password,
-                passwordConfirm,
-                name,
-            };
+                options: {
+                    data: {
+                        name: name,
+                    }
+                }
+            });
 
-            await pb.collection('users').create(data);
-            await pb.collection('users').authWithPassword(email, password);
+            if (signUpError) throw signUpError;
+
             setAuthModal(null);
             window.location.reload();
         } catch (err) {
-            console.error('PocketBase Signup Error:', err);
-            const errData = err.data?.data;
-            if (errData?.email) {
-                setError('This email address is already registered.');
-            } else if (errData?.password) {
-                setError('Password is too weak or does not match requirements.');
-            } else {
-                setError(err.data?.message || err.message || 'Failed to create account. Please try again.');
-            }
+            setError(err.message || 'Failed to create account. Please try again.');
         } finally {
             setLoading(false);
         }
