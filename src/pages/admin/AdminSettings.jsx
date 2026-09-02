@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { toast } from 'sonner';
 import { ShieldCheck, User, Lock, Save, Sparkles, Palette } from 'lucide-react';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,24 +57,39 @@ const AdminSettings = () => {
     const [saving, setSaving] = useState(false);
 
     // Admin Credentials state
-    const currentUser = pb.authStore.model;
-    const [newEmail, setNewEmail] = useState(currentUser?.email || '');
+    const [currentUser, setCurrentUser] = useState(null);
+    const [newEmail, setNewEmail] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [updatingCreds, setUpdatingCreds] = useState(false);
 
     useEffect(() => {
-        pb.collection('settings')
-            .getList(1, 1)
-            .then((r) => {
-                const rec = r.items[0];
-                if (rec) {
-                    setRecord(rec);
-                    setForm(rec);
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) {
+                setCurrentUser(user);
+                setNewEmail(user.email || '');
+            }
+        });
+
+        const fetchSettings = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('settings')
+                    .select('*')
+                    .limit(1)
+                    .maybeSingle();
+
+                if (data && !error) {
+                    setRecord(data);
+                    setForm(data);
                 }
-            })
-            .catch(() => {});
+            } catch (err) {
+                console.error('Error fetching settings:', err);
+            }
+        };
+
+        fetchSettings();
     }, []);
 
     const applyPreset = (preset) => {
@@ -92,21 +107,27 @@ const AdminSettings = () => {
         if (!record) return;
         setSaving(true);
         try {
-            await pb.collection('settings').update(record.id, {
-                store_name: form.store_name || '',
-                contact_phone: form.contact_phone || '',
-                contact_email: form.contact_email || '',
-                whatsapp: form.whatsapp || '',
-                address: form.address || '',
-                delivery_message: form.delivery_message || '',
-                announcement: form.announcement || '',
-                hero_title: form.hero_title || '',
-                hero_subtitle: form.hero_subtitle || '',
-                theme_color: form.theme_color || 'orange',
-                currency: form.currency || 'PKR',
-            });
+            const { error } = await supabase
+                .from('settings')
+                .update({
+                    store_name: form.store_name || '',
+                    contact_phone: form.contact_phone || '',
+                    contact_email: form.contact_email || '',
+                    whatsapp: form.whatsapp || '',
+                    address: form.address || '',
+                    delivery_message: form.delivery_message || '',
+                    announcement: form.announcement || '',
+                    hero_title: form.hero_title || '',
+                    hero_subtitle: form.hero_subtitle || '',
+                    theme_color: form.theme_color || 'orange',
+                    currency: form.currency || 'PKR',
+                })
+                .eq('id', record.id);
+
+            if (error) throw error;
             toast.success('Settings saved successfully');
-        } catch {
+        } catch (err) {
+            console.error('Save error:', err);
             toast.error('Could not save settings');
         } finally {
             setSaving(false);
@@ -122,31 +143,26 @@ const AdminSettings = () => {
 
         setUpdatingCreds(true);
         try {
-            const userId = currentUser?.id;
-            if (!userId) {
-                toast.error('No logged-in admin found');
-                return;
-            }
-
-            const updateData = {};
-            if (newEmail && newEmail !== currentUser.email) {
-                updateData.email = newEmail;
-                updateData.emailVisibility = true;
+            const updates = {};
+            if (newEmail && newEmail !== currentUser?.email) {
+                updates.email = newEmail;
             }
             if (newPassword) {
-                updateData.password = newPassword;
-                updateData.passwordConfirm = confirmPassword;
-                updateData.oldPassword = currentPassword;
+                updates.password = newPassword;
             }
 
-            await pb.collection('users').update(userId, updateData);
+            if (Object.keys(updates).length > 0) {
+                const { error } = await supabase.auth.updateUser(updates);
+                if (error) throw error;
+            }
+
             toast.success('Admin credentials updated successfully!');
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
         } catch (err) {
             console.error('Credential update failed:', err);
-            toast.error('Failed to update credentials. Check your current password.');
+            toast.error(err.message || 'Failed to update credentials.');
         } finally {
             setUpdatingCreds(false);
         }
@@ -241,21 +257,6 @@ const AdminSettings = () => {
                                 type="email"
                                 value={newEmail}
                                 onChange={(e) => setNewEmail(e.target.value)}
-                                className="h-11 bg-background pl-9"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Current Password (Required to save changes)</Label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-3.5 w-4 h-4 text-muted-foreground" />
-                            <Input
-                                type="password"
-                                placeholder="••••••••"
-                                value={currentPassword}
-                                onChange={(e) => setCurrentPassword(e.target.value)}
                                 className="h-11 bg-background pl-9"
                                 required
                             />
