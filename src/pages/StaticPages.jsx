@@ -8,7 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import useSettings from '@/hooks/useSettings';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { pkr } from '@/lib/money';
 
@@ -28,56 +28,60 @@ const Shell = ({ title, children }) => (
 export const MyOrdersPage = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const currentUser = pb.authStore.model;
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) setLoading(false);
+    });
 
-    // ─── STEP 1: Initial fetch ────────────────────────────────────────────────
-    // PocketBase is the single source of truth for order STATUS.
-    // We no longer blindly merge localStorage here — see note below.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
     const fetchOrders = async () => {
       try {
-        const records = await pb.collection('orders').getFullList({ sort: '-created' });
+        const { data: records, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
 
         // Filter to only this user's orders (by email or customer_id)
-        const userOrders = records.filter((o) =>
-          (currentUser.email &&
-            (o.customer_email?.toLowerCase() === currentUser.email.toLowerCase() ||
-              o.email?.toLowerCase() === currentUser.email.toLowerCase())) ||
-          (currentUser.id && o.customer_id === currentUser.id)
+        const userOrders = (records || []).filter((o) =>
+          (user.email &&
+            (o.customer_email?.toLowerCase() === user.email.toLowerCase() ||
+              o.email?.toLowerCase() === user.email.toLowerCase())) ||
+          (user.id && o.customer_id === user.id)
         );
 
-        // ── Local-storage reconciliation ─────────────────────────────────────
-        // We still read localStorage, but ONLY to surface orders that were
-        // placed as a guest (no real PocketBase record yet) and whose ID does
-        // NOT already exist in the PocketBase result set.
-        // Any order that exists in PocketBase takes precedence in full —
-        // including its live `status` field.
         let localOnlyOrders = [];
         try {
           const raw = JSON.parse(localStorage.getItem('fos_customer_orders') || '[]');
           const pbIds = new Set(userOrders.map((o) => o.id));
 
-          // Keep a local order only when:
-          //   1. It belongs to this user, AND
-          //   2. Its ID is NOT already in PocketBase (so we don't shadow a live record)
           localOnlyOrders = raw.filter((o) => {
             const emailMatch =
-              currentUser.email &&
-              (o.customer_email?.toLowerCase() === currentUser.email.toLowerCase() ||
-                o.email?.toLowerCase() === currentUser.email.toLowerCase());
-            const idMatch = currentUser.id && o.customer_id === currentUser.id;
-            const notInPb = !o.id || !pbIds.has(o.id);
-            return (emailMatch || idMatch) && notInPb;
+              user.email &&
+              (o.customer_email?.toLowerCase() === user.email.toLowerCase() ||
+                o.email?.toLowerCase() === user.email.toLowerCase());
+            const idMatch = user.id && o.customer_id === user.id;
+            const notInDb = !o.id || !pbIds.has(o.id);
+            return (emailMatch || idMatch) && notInDb;
           });
         } catch { /* ignore parse errors */ }
 
         const merged = [...userOrders, ...localOnlyOrders].sort(
-          (a, b) => new Date(b.created) - new Date(a.created)
+          (a, b) => new Date(b.created_at || b.created || 0) - new Date(a.created_at || a.created || 0)
         );
 
         setOrders(merged);
@@ -88,21 +92,11 @@ export const MyOrdersPage = () => {
       }
     };
 
-    // Fetch immediately on load
     fetchOrders();
-
-    // ─── STEP 2: Poll every 10 seconds ───────────────────────────────────────
-    // Real-time SSE subscriptions are blocked in this hosting environment,
-    // so we poll PocketBase every 10 seconds to pick up any status changes
-    // the admin made. This keeps the customer badge always up to date.
     const interval = setInterval(fetchOrders, 10000);
-
     return () => clearInterval(interval);
+  }, [user?.id]);
 
-  }, [currentUser?.id]); // depend on user ID, not the whole object, to avoid infinite loops
-
-  // ─── Status badge renderer ────────────────────────────────────────────────
-  // Each status maps to a distinct colour + icon so the customer can scan at a glance.
   const getStatusBadge = (status = 'new') => {
     const s = (status || 'new').toLowerCase();
     const base = 'flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold w-fit';
@@ -118,7 +112,6 @@ export const MyOrdersPage = () => {
     if (s === 'cancelled')
       return <span className={`${base} text-red-600 bg-red-50`}><XCircle className="w-3 h-3" /> Cancelled</span>;
 
-    // Default — 'new'
     return <span className={`${base} text-blue-500 bg-blue-500/15`}><Clock className="w-3 h-3" /> New Order</span>;
   };
 
@@ -130,7 +123,7 @@ export const MyOrdersPage = () => {
         <h1 className="text-2xl font-bold mb-2">My Orders</h1>
         <p className="text-xs text-muted-foreground mb-6">All orders placed with your account, updated live.</p>
 
-        {!currentUser ? (
+        {!user ? (
           <div className="bg-card border p-8 rounded-2xl text-center space-y-4">
             <Package className="w-12 h-12 text-muted-foreground mx-auto" />
             <h2 className="text-lg font-semibold">Please Login</h2>
@@ -157,6 +150,8 @@ export const MyOrdersPage = () => {
                   : (order.items || []);
               } catch { parsedItems = []; }
 
+              const orderDate = order.created_at || order.created;
+
               return (
                 <div key={order.id || Math.random()} className="bg-card border rounded-2xl p-6 shadow-sm space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-4">
@@ -164,14 +159,13 @@ export const MyOrdersPage = () => {
                       <span className="text-xs text-muted-foreground block mb-1">Order ID</span>
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-bold text-sm">#{order.id.slice(-8).toUpperCase()}</span>
-                        {/* getStatusBadge reads order.status directly — always live from PB */}
                         {getStatusBadge(order.status)}
                       </div>
                     </div>
                     <div>
                       <span className="text-xs text-muted-foreground block">Date</span>
                       <span className="text-xs font-medium">
-                        {order.created ? new Date(order.created).toLocaleDateString() : 'Recent'}
+                        {orderDate ? new Date(orderDate).toLocaleDateString() : 'Recent'}
                       </span>
                     </div>
                     <div>
@@ -383,16 +377,24 @@ export const UserLoginPage = () => {
           setError('Password must be at least 10 characters, with 1 uppercase, 1 lowercase, 1 number, and 1 special character.');
           return;
         }
-        await pb.collection('users').create({
-          name,
+
+        const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          passwordConfirm: password,
+          options: {
+            data: { name },
+          },
         });
-        await pb.collection('users').authWithPassword(email, password);
+        if (signUpError) throw signUpError;
+
         navigate('/my-orders');
       } else {
-        await pb.collection('users').authWithPassword(email, password);
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (signInError) throw signInError;
+
         navigate('/my-orders');
       }
     } catch (err) {
@@ -400,7 +402,7 @@ export const UserLoginPage = () => {
       setError(
         isLogin
           ? 'Invalid email or password. Please try again.'
-          : err?.response?.message || 'Failed to create account. This email might already be registered.'
+          : err?.message || 'Failed to create account. This email might already be registered.'
       );
     }
   };
