@@ -153,6 +153,13 @@ const ProductPage = () => {
                             )}
                         </div>
 
+                        {/* Brand Logo / Header Support */}
+                        {settings?.logo ? (
+                            <div className="my-3">
+                                <img src={settings.logo} alt="Factory Outlet Shoes" className="h-8 object-contain" />
+                            </div>
+                        ) : null}
+
                         <h1 className="font-display mt-4 text-3xl font-bold sm:text-4xl">{product.name}</h1>
 
                         <div className="mt-4 flex items-baseline gap-3">
