@@ -24,24 +24,19 @@ const AdminLoginPage = () => {
 
         try {
             if (isForgotMode) {
-                // Send password reset email
                 const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
                     redirectTo: window.location.origin + '/admin/login',
                 });
-
                 if (resetError) throw resetError;
                 setMessage('Password recovery instructions sent to your email.');
             } else {
-                // Regular Login
                 const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 });
-
                 if (authError || !authData.user) {
                     throw new Error('Invalid email or password.');
                 }
-
                 navigate('/admin');
             }
         } catch (err) {
@@ -119,6 +114,7 @@ const AdminLoginPage = () => {
 
                 {isForgotMode ? (
                     <button
+                        type="button"
                         onClick={() => { setIsForgotMode(false); setError(''); setMessage(''); }}
                         className="mt-5 flex w-full items-center justify-center text-center text-xs text-muted-foreground hover:text-primary"
                     >
