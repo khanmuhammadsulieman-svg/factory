@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet';
 import { Minus, Plus, RefreshCcw, ShieldCheck, ShoppingBag, Truck, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -29,14 +29,21 @@ const ProductPage = () => {
     useEffect(() => {
         setProduct(null);
         setNotFound(false);
-        pb.collection('products')
-            .getOne(id)
-            .then((p) => {
-                setProduct(p);
-                setSize((p.sizes || [])[0] || '');
-                setColor((p.colors || [])[0] || '');
-                setImage(0);
-                setQty(1);
+        supabase
+            .from('products')
+            .select('*')
+            .eq('id', id)
+            .single()
+            .then(({ data, error }) => {
+                if (error || !data) {
+                    setNotFound(true);
+                } else {
+                    setProduct(data);
+                    setSize((data.sizes || [])[0] || '');
+                    setColor((data.colors || [])[0] || '');
+                    setImage(0);
+                    setQty(1);
+                }
             })
             .catch(() => setNotFound(true));
     }, [id]);
