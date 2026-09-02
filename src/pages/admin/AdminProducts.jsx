@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { pkr } from '@/lib/money';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,14 +41,25 @@ const AdminProducts = () => {
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(null);
 
-    const load = () => {
-        pb.collection('products')
-            .getFullList({ sort: '-created' })
-            .then(setProducts)
-            .catch(() => { })
-            .finally(() => setLoading(false));
+    const load = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setProducts(data || []);
+        } catch (err) {
+            console.error('Error fetching products:', err.message);
+        } finally {
+            setLoading(false);
+        }
     };
-    useEffect(load, []);
+
+    useEffect(() => {
+        load();
+    }, []);
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -65,7 +76,7 @@ const AdminProducts = () => {
 
     const parsedSizes = form.sizes.split(',').map((s) => s.trim()).filter(Boolean);
 
-    // UPDATED: Advanced File Upload with Automatic Optimization & Size Compression
+    // Advanced File Upload with Automatic Optimization & Size Compression
     const handleFileUpload = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -78,7 +89,7 @@ const AdminProducts = () => {
             
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 1000; // Resize large images
+                const MAX_WIDTH = 1000;
                 const MAX_HEIGHT = 1000;
                 let width = img.width;
                 let height = img.height;
@@ -100,7 +111,6 @@ const AdminProducts = () => {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // Convert any format to highly compressed webp (fixes size limits)
                 const compressedBase64 = canvas.toDataURL('image/webp', 0.8);
                 set('images', compressedBase64);
                 toast.success('Image processed and optimized successfully!');
@@ -132,17 +142,28 @@ const AdminProducts = () => {
             bestseller: form.bestseller,
             sizePrices: form.sizePrices,
         };
+
         try {
             if (editing) {
-                await pb.collection('products').update(editing.id, data);
+                const { error } = await supabase
+                    .from('products')
+                    .update(data)
+                    .eq('id', editing.id);
+
+                if (error) throw error;
                 toast.success('Product updated');
             } else {
-                await pb.collection('products').create(data);
+                const { error } = await supabase
+                    .from('products')
+                    .insert([data]);
+
+                if (error) throw error;
                 toast.success('Product created');
             }
             setOpen(false);
             load();
-        } catch {
+        } catch (err) {
+            console.error('Save error:', err);
             toast.error('Save failed — check the fields and try again');
         } finally {
             setSaving(false);
@@ -151,8 +172,14 @@ const AdminProducts = () => {
 
     const toggleActive = async (p) => {
         try {
-            await pb.collection('products').update(p.id, { active: !p.active });
+            const { error } = await supabase
+                .from('products')
+                .update({ active: !p.active })
+                .eq('id', p.id);
+
+            if (error) throw error;
             setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, active: !p.active } : x)));
+            toast.success('Product status updated');
         } catch {
             toast.error('Could not update product');
         }
@@ -160,7 +187,12 @@ const AdminProducts = () => {
 
     const doDelete = async () => {
         try {
-            await pb.collection('products').delete(deleting.id);
+            const { error } = await supabase
+                .from('products')
+                .delete()
+                .eq('id', deleting.id);
+
+            if (error) throw error;
             toast.success('Product deleted');
             setProducts((prev) => prev.filter((x) => x.id !== deleting.id));
         } catch {
