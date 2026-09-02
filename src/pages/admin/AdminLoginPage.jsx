@@ -23,6 +23,13 @@ const AdminLoginPage = () => {
         setLoading(true);
 
         try {
+            // Check local fallback environment variables first
+            if (!isForgotMode && email === import.meta.env.VITE_ADMIN_USER && password === import.meta.env.VITE_ADMIN_PASS) {
+                localStorage.setItem('isAdminAuthenticated', 'true');
+                navigate('/admin');
+                return;
+            }
+
             if (isForgotMode) {
                 const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
                     redirectTo: window.location.origin + '/admin/login',
@@ -39,6 +46,7 @@ const AdminLoginPage = () => {
                     throw new Error('Invalid email or password.');
                 }
 
+                localStorage.setItem('isAdminAuthenticated', 'true');
                 navigate('/admin');
             }
         } catch (err) {
