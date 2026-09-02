@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { AlertTriangle, Banknote, Clock, ShoppingCart } from 'lucide-react';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { pkr } from '@/lib/money';
 
 const STATUS_COLORS = {
@@ -20,16 +20,26 @@ const AdminDashboard = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        Promise.all([
-            pb.collection('orders').getFullList({ sort: '-created' }),
-            pb.collection('products').getFullList(),
-        ])
-            .then(([o, p]) => {
-                setOrders(o);
-                setProducts(p);
-            })
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        const fetchDashboardData = async () => {
+            try {
+                const [ordersRes, productsRes] = await Promise.all([
+                    supabase.from('orders').select('*').order('created_at', { ascending: false }),
+                    supabase.from('products').select('*'),
+                ]);
+
+                if (ordersRes.error) throw ordersRes.error;
+                if (productsRes.error) throw productsRes.error;
+
+                setOrders(ordersRes.data || []);
+                setProducts(productsRes.data || []);
+            } catch (err) {
+                console.error('Error fetching dashboard data:', err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchDashboardData();
     }, []);
 
     const pending = orders.filter((o) => o.status === 'new').length;
