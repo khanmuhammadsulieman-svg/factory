@@ -27,9 +27,9 @@ const CheckoutPage = () => {
   const [form, setForm] = useState({
     name: activeUser?.name || '',
     email: activeUser?.email || '',
-    phone: '',
-    address: '',
-    city: '',
+    phone: activeUser?.phone || activeUser?.mobile || '',
+    address: activeUser?.address || '',
+    city: activeUser?.city || '',
     notes: ''
   });
 
@@ -167,6 +167,7 @@ const CheckoutPage = () => {
       };
       localStorage.setItem('fos_customer_orders', JSON.stringify([newOrderObj, ...localOrders]));
 
+      clear();
       setOrderId(recordId);
       setPlacing(false);
     } catch (err) {
