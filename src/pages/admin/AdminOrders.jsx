@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Eye, Search, Trash2, AlertTriangle, Box, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 import { pkr } from '@/lib/money';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -31,34 +31,52 @@ const AdminOrders = () => {
     const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
-        // Initial fetch
-        pb.collection('orders')
-            .getFullList({ sort: '-created' })
-            .then(setOrders)
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        const fetchOrders = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .order('created_at', { ascending: false });
 
-        // Real-time subscription so the admin table also stays live
-        pb.collection('orders').subscribe('*', (e) => {
-            if (e.action === 'create') {
-                setOrders((prev) => [e.record, ...prev]);
-            } else if (e.action === 'update') {
-                setOrders((prev) =>
-                    prev.map((o) => (o.id === e.record.id ? e.record : o))
-                );
-                setSelected((current) =>
-                    current?.id === e.record.id ? e.record : current
-                );
-            } else if (e.action === 'delete') {
-                setOrders((prev) => prev.filter((o) => o.id !== e.record.id));
-                setSelected((current) =>
-                    current?.id === e.record.id ? null : current
-                );
+                if (error) throw error;
+                setOrders(data || []);
+            } catch (err) {
+                console.error('Error fetching orders:', err.message);
+            } finally {
+                setLoading(false);
             }
-        });
+        };
+
+        fetchOrders();
+
+        // Real-time subscription for Supabase orders table
+        const subscription = supabase
+            .channel('admin-orders-channel')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'orders' },
+                (payload) => {
+                    if (payload.eventType === 'INSERT') {
+                        setOrders((prev) => [payload.new, ...prev]);
+                    } else if (payload.eventType === 'UPDATE') {
+                        setOrders((prev) =>
+                            prev.map((o) => (o.id === payload.new.id ? payload.new : o))
+                        );
+                        setSelected((current) =>
+                            current?.id === payload.new.id ? payload.new : current
+                        );
+                    } else if (payload.eventType === 'DELETE') {
+                        setOrders((prev) => prev.filter((o) => o.id !== payload.old.id));
+                        setSelected((current) =>
+                            current?.id === payload.old.id ? null : current
+                        );
+                    }
+                }
+            )
+            .subscribe();
 
         return () => {
-            pb.collection('orders').unsubscribe('*');
+            supabase.removeChannel(subscription);
         };
     }, []);
 
@@ -84,9 +102,14 @@ const AdminOrders = () => {
 
     const updateStatus = async (order, next) => {
         try {
-            const updatedOrder = await pb.collection('orders').update(order.id, {
-                status: next,
-            });
+            const { data: updatedOrder, error } = await supabase
+                .from('orders')
+                .update({ status: next })
+                .eq('id', order.id)
+                .select()
+                .single();
+
+            if (error) throw error;
 
             setOrders((prev) =>
                 prev.map((o) => (o.id === order.id ? updatedOrder : o))
@@ -106,7 +129,13 @@ const AdminOrders = () => {
         if (!orderToDelete) return;
         setDeleting(true);
         try {
-            await pb.collection('orders').delete(orderToDelete.id);
+            const { error } = await supabase
+                .from('orders')
+                .delete()
+                .eq('id', orderToDelete.id);
+
+            if (error) throw error;
+
             setOrders((prev) => prev.filter((o) => o.id !== orderToDelete.id));
             setDeleteModalOpen(false);
             setOrderToDelete(null);
@@ -162,8 +191,9 @@ const AdminOrders = () => {
                     <tbody className="divide-y divide-border">
                         {filtered.map((o) => {
                             const orderEmail = o.customer_email || o.email || o.customerEmail || o.user_email || '';
-                            const formattedDate = o.created 
-                                ? new Date(o.created).toLocaleString('en-PK', {
+                            const orderDate = o.created_at || o.created;
+                            const formattedDate = orderDate 
+                                ? new Date(orderDate).toLocaleString('en-PK', {
                                     day: 'numeric',
                                     month: 'short',
                                     year: 'numeric',
@@ -241,8 +271,9 @@ const AdminOrders = () => {
                         }
 
                         const selectedEmail = selected.customer_email || selected.email || selected.customerEmail || selected.user_email || '';
-                        const modalFormattedDate = selected.created 
-                            ? new Date(selected.created).toLocaleString('en-PK', {
+                        const selectedDate = selected.created_at || selected.created;
+                        const modalFormattedDate = selectedDate 
+                            ? new Date(selectedDate).toLocaleString('en-PK', {
                                 day: 'numeric',
                                 month: 'short',
                                 year: 'numeric',
