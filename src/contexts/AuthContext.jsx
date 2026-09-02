@@ -1,30 +1,59 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import pb from '@/lib/pocketbaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(pb.authStore.record);
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    useEffect(() => pb.authStore.onChange((_token, record) => setUser(record)), []);
+    useEffect(() => {
+        // Fetch initial session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            setLoading(false);
+        });
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+            setLoading(false);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     const value = useMemo(
         () => ({
             user,
-            isAuthed: pb.authStore.isValid,
-            login: (email, password) => pb.collection('users').authWithPassword(email, password),
-            signup: async (email, password, extraFields = {}) => {
-                await pb.collection('users').create({ email, password, passwordConfirm: password, ...extraFields });
-
-                return pb.collection('users').authWithPassword(email, password);
+            loading,
+            isAuthed: !!user,
+            login: async (email, password) => {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                return data;
             },
-            logout: () => pb.authStore.clear(),
+            signup: async (email, password, extraFields = {}) => {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: extraFields,
+                    },
+                });
+                if (error) throw error;
+                return data;
+            },
+            logout: async () => {
+                await supabase.auth.signOut();
+                setUser(null);
+            },
         }),
-        [user],
+        [user, loading],
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
+};
 
 export const useAuth = () => useContext(AuthContext);
 
